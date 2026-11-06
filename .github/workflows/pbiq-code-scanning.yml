@@ -1,0 +1,43 @@
+name: PBIQ Code Scanning Acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  code-scanning:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Audit synthetic Fabric model
+        id: pbiq
+        continue-on-error: true
+        uses: dawidthecactus/powerbi-quality-gate@6d44b0a12bc71d804f35faebd2285c56b7e41298
+        with:
+          project-path: fixtures/warning/Warning.SemanticModel
+          fail-on-warning: 'true'
+          sarif-output: reports/pbiq-results.sarif
+
+      - name: Verify completed audit
+        shell: bash
+        env:
+          EXIT_CODE: ${{ steps.pbiq.outputs.exit-code }}
+          EVALUATED: ${{ steps.pbiq.outputs.evaluated }}
+          SARIF_PATH: ${{ steps.pbiq.outputs.sarif-path }}
+        run: |
+          set -euo pipefail
+          test "$EXIT_CODE" = "1"
+          test "$EVALUATED" = "true"
+          test -s "$SARIF_PATH"
+
+      - name: Upload SARIF to GitHub Code Scanning
+        if: ${{ always() && steps.pbiq.outputs.evaluated == 'true' && steps.pbiq.outputs.sarif-path != '' }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: ${{ steps.pbiq.outputs.sarif-path }}
+          category: pbiq-fabric-test
+          wait-for-processing: true
